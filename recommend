@@ -1,0 +1,89 @@
+import pandas as pd
+import numpy as np
+from scipy.sparse import csr_matrix
+from sklearn.neighbors import NearestNeighbors
+
+class RecommendationEngine:
+    def __init__(self, user_df, item_df, interaction_df, k=10):
+        self.user_df = user_df
+        self.item_df = item_df
+        self.interaction_df = interaction_df
+        self.k = k
+
+    def fit(self):
+        # merge the user dataframe, item dataframe, and interaction dataframe on the respective IDs
+        self.df = self.user_df.merge(self.interaction_df, on='user_id').merge(self.item_df, on='item_id')
+
+        # create a pivot table to get the user-item interactions in a matrix form
+        self.user_item_matrix = self.df.pivot_table(index='user_id', columns='item_id', values='rating').fillna(0)
+
+        # convert the user-item matrix to a sparse matrix
+        self.user_item_matrix = csr_matrix(self.user_item_matrix.values)
+
+        # initialize a nearest neighbors model
+        self.neighbors_model = NearestNeighbors(metric='cosine', algorithm='brute', n_neighbors=self.k, n_jobs=-1)
+
+        # fit the nearest neighbors model on the user-item matrix
+        self.neighbors_model.fit(self.user_item_matrix)
+
+    def recommend(self, user_id, num_recommendations=5):
+        # get the user's row in the user-item matrix
+        user_row = self.user_item_matrix[self.user_df[self.user_df['user_id'] == user_id].index[0], :]
+
+        # get the indices and distances of the k nearest neighbors
+        _, neighbors = self.neighbors_model.kneighbors(user_row)
+
+        # get the user IDs of the k nearest neighbors
+        neighbor_user_ids = [self.user_df.iloc[i]['user_id'] for i in neighbors.flatten()]
+
+        # get the items that the k nearest neighbors have interacted with
+        neighbor_items = self.interaction_df[self.interaction_df['user_id'].isin(neighbor_user_ids)]['item_id'].unique()
+
+        # get the items that the user has already interacted with
+        user_items = self.interaction_df[self.interaction_df['user_id'] == user_id]['item_id'].unique()
+
+        # get the items that the user has not interacted with
+        recommended_items = np.setdiff1d(neighbor_items, user_items)
+
+        # get the top num_recommendations items
+        recommended_items = recommended_items[:num_recommendations]
+
+        return recommended_items
+
+# create sample user, item, and interaction dataframes
+user_df = pd.DataFrame({
+    'user_id': [1, 2, 3, 4, 5],
+    'age': [25, 30, 27, 35, 28],
+    'gender': ['M', 'F', 'F', 'M', 'M']
+})
+
+item_df = pd.DataFrame({
+    'item_id': [101, 102, 103, 104, 105, 106, 107, 108, 109, 110],
+    'category': ['books', 'books', 'books', 'electronics', 'electronics', 'electronics', 'fashion', 'fashion', 'fashion', 'music'],
+    'price': [20, 25, 30, 200, 150, 100, 50, 60, 70, 10]
+})
+
+interaction_df = pd.DataFrame({
+    'user_id': [1, 1, 2, 2, 3, 3, 3, 4, 4, 4],
+    'item_id': [101, 102, 101, 102, 103, 104, 105, 101, 102, 103],
+    'rating': [5, 4, 5, 3, 4, 5, 5, 4, 3, 5]
+})
+
+# initialize the recommendation engine
+recommendation_engine = RecommendationEngine(user_df, item_df, interaction_df)
+
+# fit the recommendation engine
+recommendation_engine.fit()
+
+# get the recommendations for user 4
+recommendations = recommendation_engine.recommend(4)
+
+print("Recommendations for user 4:", recommendations)
+
+
+
+
+
+
+
+
